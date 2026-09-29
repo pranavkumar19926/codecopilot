@@ -1,0 +1,7 @@
+.codecopilot/
+.cc_*/
+.venv/
+__pycache__/
+*.egg-info/
+.env
+.pytest_cache/

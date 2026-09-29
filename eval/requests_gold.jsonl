@@ -1,0 +1,54 @@
+// Gold set for psf/requests @ commit 611c616 — line numbers are only valid at that commit.
+// Each item: a question + a (path, line) that the retrieved chunks must contain.
+// type: "semantic" = where/how lookup; "why" = needs the reasoning/comment near the code; "identifier" = bare symbol name (BM25 in Phase 2 should fix misses).
+{"question": "Where is the Authorization header removed when a request is redirected to a different host?", "path": "src/requests/sessions.py", "line": 327, "type": "semantic"}
+{"question": "Why is an http to https redirect on the same host allowed to keep credentials?", "path": "src/requests/sessions.py", "line": 164, "type": "why"}
+{"question": "How does a session pick which connection adapter handles a URL?", "path": "src/requests/sessions.py", "line": 876, "type": "semantic"}
+{"question": "Why are adapters reordered when a new one is registered for a prefix?", "path": "src/requests/sessions.py", "line": 896, "type": "why"}
+{"question": "Where does the library follow redirect responses in a loop?", "path": "src/requests/sessions.py", "line": 186, "type": "semantic"}
+{"question": "How are proxy settings recomputed after a redirect?", "path": "src/requests/sessions.py", "line": 334, "type": "semantic"}
+{"question": "How are environment variables like proxies and CA bundle merged into request settings?", "path": "src/requests/sessions.py", "line": 831, "type": "semantic"}
+{"question": "How is the length of a request body computed for file-like objects?", "path": "src/requests/utils.py", "line": 160, "type": "semantic"}
+{"question": "Where are credentials read from the user's netrc file?", "path": "src/requests/utils.py", "line": 231, "type": "semantic"}
+{"question": "How does the library decide a URL should skip the proxy based on no_proxy?", "path": "src/requests/utils.py", "line": 810, "type": "semantic"}
+{"question": "How is the text encoding guessed from the Content-Type header?", "path": "src/requests/utils.py", "line": 569, "type": "semantic"}
+{"question": "Where is the basic auth header value base64 encoded?", "path": "src/requests/auth.py", "line": 34, "type": "semantic"}
+{"question": "How does digest authentication retry after a 401 challenge?", "path": "src/requests/auth.py", "line": 273, "type": "semantic"}
+{"question": "Where is the SSL certificate verification configured on a connection?", "path": "src/requests/adapters.py", "line": 307, "type": "semantic"}
+{"question": "How is a urllib3 response converted into a Response object?", "path": "src/requests/adapters.py", "line": 365, "type": "semantic"}
+{"question": "How is a dictionary with case-insensitive keys implemented for headers?", "path": "src/requests/structures.py", "line": 20, "type": "semantic"}
+{"question": "Where does an HTTP error status raise an exception for the user?", "path": "src/requests/models.py", "line": 1144, "type": "semantic"}
+{"question": "How is the request body encoded for JSON, form data and file uploads?", "path": "src/requests/models.py", "line": 576, "type": "semantic"}
+{"question": "Where are cookies from a response stored into the cookie jar?", "path": "src/requests/cookies.py", "line": 135, "type": "semantic"}
+{"question": "should_strip_auth", "path": "src/requests/sessions.py", "line": 154, "type": "identifier"}
+{"question": "get_connection_with_tls_context", "path": "src/requests/adapters.py", "line": 455, "type": "identifier"}
+{"question": "init_poolmanager", "path": "src/requests/adapters.py", "line": 239, "type": "identifier"}
+{"question": "requote_uri", "path": "src/requests/utils.py", "line": 704, "type": "identifier"}
+{"question": "merge_cookies", "path": "src/requests/cookies.py", "line": 604, "type": "identifier"}
+{"question": "build_digest_header", "path": "src/requests/auth.py", "line": 157, "type": "identifier"}
+// --- items 26-50 ---
+{"question": "How many retries does an adapter do by default, and are read retries enabled?", "path": "src/requests/adapters.py", "line": 209, "type": "semantic"}
+{"question": "How is a (connect, read) timeout tuple turned into a urllib3 timeout?", "path": "src/requests/adapters.py", "line": 681, "type": "semantic"}
+{"question": "Where are internationalized domain names converted to ASCII?", "path": "src/requests/models.py", "line": 530, "type": "semantic"}
+{"question": "What error is raised if you read the response body twice after streaming it?", "path": "src/requests/models.py", "line": 1041, "type": "semantic"}
+{"question": "Where does the library remember the file position of an upload body so it can rewind on redirect?", "path": "src/requests/models.py", "line": 616, "type": "semantic"}
+{"question": "How are per-request settings merged with session settings, and how are keys set to None removed?", "path": "src/requests/sessions.py", "line": 101, "type": "semantic"}
+{"question": "Why does a redirect with a streamed body raise instead of hanging the connection?", "path": "src/requests/sessions.py", "line": 278, "type": "why"}
+{"question": "Why does text content default to Latin-1 when the server sends no charset?", "path": "src/requests/utils.py", "line": 587, "type": "why"}
+{"question": "Where is a request body seeked back to its start before being resent?", "path": "src/requests/utils.py", "line": 1139, "type": "semantic"}
+{"question": "How is the response body decoded into a string?", "path": "src/requests/models.py", "line": 1054, "type": "semantic"}
+{"question": "How are hook callbacks like 'response' invoked?", "path": "src/requests/hooks.py", "line": 32, "type": "semantic"}
+{"question": "Where is the default User-Agent string built?", "path": "src/requests/utils.py", "line": 942, "type": "semantic"}
+{"question": "How is the Link header parsed into a list of links?", "path": "src/requests/utils.py", "line": 965, "type": "semantic"}
+{"question": "How are a username and password extracted from a URL?", "path": "src/requests/utils.py", "line": 1070, "type": "semantic"}
+{"question": "Where are header values validated for illegal characters like newlines?", "path": "src/requests/utils.py", "line": 1087, "type": "semantic"}
+{"question": "How is the right proxy chosen for a URL from a proxies dict with scheme and host keys?", "path": "src/requests/utils.py", "line": 885, "type": "semantic"}
+{"question": "How does a session combine its own headers, cookies and auth into a prepared request?", "path": "src/requests/sessions.py", "line": 511, "type": "semantic"}
+{"question": "Where are proxy connection managers created and cached, including SOCKS?", "path": "src/requests/adapters.py", "line": 269, "type": "semantic"}
+{"question": "How does a response know whether it is a redirect?", "path": "src/requests/models.py", "line": 877, "type": "semantic"}
+{"question": "Why is a fake request object wrapped around the request for cookielib?", "path": "src/requests/cookies.py", "line": 31, "type": "why"}
+{"question": "How is the JSON encoding of a byte string detected?", "path": "src/requests/utils.py", "line": 1008, "type": "semantic"}
+{"question": "cookiejar_from_dict", "path": "src/requests/cookies.py", "line": 579, "type": "identifier"}
+{"question": "LookupDict", "path": "src/requests/structures.py", "line": 96, "type": "identifier"}
+{"question": "unquote_unreserved", "path": "src/requests/utils.py", "line": 680, "type": "identifier"}
+{"question": "prepare_hooks", "path": "src/requests/models.py", "line": 722, "type": "identifier"}
