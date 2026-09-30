@@ -48,7 +48,7 @@ def test_retrieval_and_incremental_reindex(tmp_path):
     idx = VectorIndex.build(ingest_repo(repo, cfg), emb, repo)
     idx.save(cfg.data_dir)
     idx = VectorIndex.load(cfg.data_dir)
-    hits = Copilot(cfg, idx, emb).retrieve("where is the token refreshed", k=1)
+    hits = Copilot(cfg, idx, emb).retrieve("where is the token refreshed", k=1, mode="dense")
     assert hits[0].chunk.path == "pkg/auth.py"
 
     (repo / "pkg" / "db.py").write_text("def connect_database(url, timeout):\n    return open_pool(url)\n")
@@ -72,3 +72,11 @@ def test_exclude_globs(tmp_path):
     cfg = Settings(exclude_globs=("tests/*",))
     assert "tests/test_auth.py" not in {c.path for c in ingest_repo(repo, cfg)}
     assert "tests/test_auth.py" in {c.path for c in ingest_repo(repo, Settings())}
+
+
+def test_citation_check_accepts_backticks(tmp_path):
+    repo, cfg = _repo(tmp_path), Settings()
+    idx = VectorIndex.build(ingest_repo(repo, cfg), HashingEmbedder(), repo)
+    _, used = assemble_context(idx.search(HashingEmbedder().embed_query("token"), 2), 10_000)
+    res = check_citations("It is in `pkg/auth.py:1-2`, see also [pkg/db.py:1-2].", used)
+    assert res == {"n_citations": 2, "invalid": []}

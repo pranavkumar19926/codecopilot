@@ -1,5 +1,8 @@
 """Retrieval eval. Gold items name a (path, line) that MUST appear in a retrieved chunk.
-Line-based targets stay valid when chunking changes (fixed → AST), so Phase 1 vs Phase 2 is a fair comparison."""
+Line-based targets stay valid when chunking changes (fixed → AST), so Phase 1 vs Phase 2 is a fair comparison.
+
+Caveat worth stating in any write-up: bigger chunks make line-containment easier. Report mean chunk size
+next to recall (the CLI does) so a recall gain can't quietly come from just making chunks larger."""
 from __future__ import annotations
 
 import json
@@ -27,22 +30,24 @@ def validate_gold(gold: list[dict], repo: Path) -> list[str]:
     return problems
 
 
-def evaluate_retrieval(cp: Copilot, gold: list[dict], k: int) -> dict:
+def evaluate_retrieval(cp: Copilot, gold: list[dict], k: int, mode: str | None = None) -> dict:
     per_q = []
     for g in gold:
-        hits = cp.retrieve(g["question"], k)
+        hits = cp.retrieve(g["question"], k, mode)
         rank = next((i for i, h in enumerate(hits, 1)
                      if h.chunk.path == g["path"] and h.chunk.start_line <= g["line"] <= h.chunk.end_line), None)
         per_q.append({"question": g["question"], "type": g.get("type", "semantic"), "rank": rank})
-    n = len(per_q)
-    by_type: dict[str, dict] = {}
-    for t in sorted({r["type"] for r in per_q}):
-        rs = [r for r in per_q if r["type"] == t]
-        by_type[t] = {"n": len(rs), "recall": sum(r["rank"] is not None for r in rs) / len(rs)}
-    return {
-        "n": n,
-        "recall": sum(r["rank"] is not None for r in per_q) / n if n else 0.0,
-        "mrr": sum(1 / r["rank"] for r in per_q if r["rank"]) / n if n else 0.0,
-        "by_type": by_type,
-        "per_question": per_q,
-    }
+
+    def summarize(rows: list[dict]) -> dict:
+        n = len(rows)
+        return {
+            "n": n,
+            "recall": sum(r["rank"] is not None for r in rows) / n if n else 0.0,
+            "mrr": sum(1 / r["rank"] for r in rows if r["rank"]) / n if n else 0.0,
+            "hit1": sum(r["rank"] == 1 for r in rows) / n if n else 0.0,
+        }
+
+    out = summarize(per_q)
+    out["by_type"] = {t: summarize([r for r in per_q if r["type"] == t]) for t in sorted({r["type"] for r in per_q})}
+    out["per_question"] = per_q
+    return out

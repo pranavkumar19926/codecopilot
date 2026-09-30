@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +17,7 @@ from .ingest import Chunk
 class Hit:
     chunk: Chunk
     score: float
+    detail: dict = field(default_factory=dict)  # per-retriever ranks, e.g. {"dense": 3, "bm25": 1}
 
 
 class VectorIndex:
@@ -32,7 +33,7 @@ class VectorIndex:
         if previous and previous.meta.get("embed_model") == embedder.name:
             cache = {c.id: v for c, v in zip(previous.chunks, previous.vectors)}
         todo = [i for i, c in enumerate(chunks) if c.id not in cache]
-        new_vecs = embedder.embed_docs([chunks[i].text for i in todo])
+        new_vecs = embedder.embed_docs([chunks[i].embed_text for i in todo])
         for i, v in zip(todo, new_vecs):
             cache[chunks[i].id] = v
         vectors = np.stack([cache[c.id] for c in chunks]) if chunks else np.zeros((0, 1), np.float32)

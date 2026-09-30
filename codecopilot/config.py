@@ -17,16 +17,26 @@ class Settings(BaseSettings):
     # fnmatch globs on repo-relative posix paths, e.g. ("tests/*", "docs/*")
     exclude_globs: tuple[str, ...] = ()
 
-    # Phase 1 baseline: fixed-size line windows (AST chunking replaces this in Phase 2)
-    chunk_lines: int = 60
-    chunk_overlap: int = 15
+    # Chunking. "ast" = Phase 2 tree-sitter chunks (Python); "fixed" = Phase 1 baseline line windows.
+    # Non-Python files always fall back to fixed windows.
+    chunker: Literal["ast", "fixed"] = "ast"
+    chunk_lines: int = 60        # fixed windows
+    chunk_overlap: int = 15      # fixed windows
+    ast_max_lines: int = 120     # bigger classes are split into header + methods; bigger functions split by statement
+    ast_min_lines: int = 6       # consecutive functions/methods shorter than this are packed into one group chunk
 
     # Embeddings
     embed_backend: Literal["sentence-transformers", "hashing"] = "sentence-transformers"
     embed_model: str = "BAAI/bge-small-en-v1.5"
     embed_batch_size: int = 32
 
-    # Retrieval
+    # Retrieval. "hybrid" = dense + BM25 fused with reciprocal rank fusion (Phase 2); "dense" = Phase 1 baseline.
+    retrieval_mode: Literal["hybrid", "dense", "bm25"] = "hybrid"
+    fusion_depth: int = 50       # candidates taken from each retriever before fusion
+    rrf_k: int = 60              # RRF constant from Cormack et al. 2009; larger = flatter rank weighting
+    bm25_symbol_boost: int = 3   # symbol-name tokens are counted this many extra times
+    symbol_pin: bool = True      # identifier in the query that names a definition → that chunk ranks first
+    symbol_pin_max: int = 3      # cap, e.g. `send` is defined in 3 classes
     top_k: int = 8
     context_token_budget: int = 6000
 

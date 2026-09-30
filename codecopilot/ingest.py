@@ -1,4 +1,5 @@
-"""Repo walking + Phase 1 fixed-size chunking. Each chunk carries path and line range so answers can cite path:line."""
+"""Repo walking + chunk model. Two chunkers: `fixed` (Phase 1 baseline, line windows) and `ast`
+(Phase 2, syntactic boundaries via tree-sitter). Every chunk carries path + line range so answers can cite path:line."""
 from __future__ import annotations
 
 import fnmatch
@@ -13,18 +14,40 @@ from .config import Settings
 
 @dataclass
 class Chunk:
-    id: str           # sha1(path:start-end:content) — stable across reindexing of unchanged code
+    id: str           # sha1(path:start-end:embed_text) — stable across reindexing of unchanged code
     path: str         # repo-relative, posix
     start_line: int   # 1-indexed, inclusive
     end_line: int     # inclusive
-    text: str
+    text: str         # exact source lines start..end (what the LLM sees and what citations point into)
+    symbol: str = ""  # qualified name, e.g. "SessionRedirectMixin.rebuild_auth"; "" for fixed windows
+    kind: str = "window"  # window | function | class | method | class_header | module | group
+    parent: str = ""  # enclosing class for methods / class_header, else ""
+    context: str = "" # extra header line(s) used only for embedding/BM25, e.g. a class's method list
 
     @property
     def citation(self) -> str:
         return f"{self.path}:{self.start_line}-{self.end_line}"
 
+    @property
+    def embed_text(self) -> str:
+        """Text that gets embedded. AST chunks get a header so a method body that never mentions its
+        class or file still matches questions about them. Fixed windows are embedded raw (Phase 1 baseline)."""
+        if not self.symbol:
+            return self.text
+        head = f"# file: {self.path}\n# {self.kind}: {self.symbol}\n"
+        if self.context:
+            head += self.context + "\n"
+        return head + self.text
+
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def make_chunk(path: str, start: int, end: int, text: str, symbol: str = "", kind: str = "window",
+               parent: str = "", context: str = "") -> Chunk:
+    c = Chunk("", path, start, end, text, symbol, kind, parent, context)
+    c.id = hashlib.sha1(f"{path}:{start}-{end}:{c.embed_text}".encode()).hexdigest()[:16]
+    return c
 
 
 def iter_source_files(root: Path, cfg: Settings) -> Iterator[Path]:
@@ -39,6 +62,7 @@ def iter_source_files(root: Path, cfg: Settings) -> Iterator[Path]:
 
 
 def chunk_file(text: str, rel_path: str, size: int, overlap: int) -> list[Chunk]:
+    """Phase 1 baseline: fixed line windows with overlap."""
     if overlap >= size:
         raise ValueError("chunk_overlap must be smaller than chunk_lines")
     lines = text.splitlines()
@@ -48,9 +72,7 @@ def chunk_file(text: str, rel_path: str, size: int, overlap: int) -> list[Chunk]
         window = lines[start : start + size]
         body = "\n".join(window)
         if body.strip():
-            end = start + len(window)
-            cid = hashlib.sha1(f"{rel_path}:{start+1}-{end}:{body}".encode()).hexdigest()[:16]
-            chunks.append(Chunk(cid, rel_path, start + 1, end, body))
+            chunks.append(make_chunk(rel_path, start + 1, start + len(window), body))
         if start + size >= len(lines):
             break
     return chunks
@@ -71,5 +93,9 @@ def ingest_repo(root: Path, cfg: Settings) -> list[Chunk]:
             text = f.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        out.extend(chunk_file(text, rel, cfg.chunk_lines, cfg.chunk_overlap))
+        if cfg.chunker == "ast" and f.suffix == ".py":
+            from .chunking import chunk_python  # lazy: tree-sitter only needed for the AST chunker
+            out.extend(chunk_python(text, rel, cfg))
+        else:
+            out.extend(chunk_file(text, rel, cfg.chunk_lines, cfg.chunk_overlap))
     return out
