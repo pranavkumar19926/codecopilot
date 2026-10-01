@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     symbol_pin: bool = True      # identifier in the query that names a definition → that chunk ranks first
     symbol_pin_max: int = 3      # cap, e.g. `send` is defined in 3 classes
     top_k: int = 8
+
+    # Phase 3, set from measurements (eval/run_phase3.ps1): rewriting helps on hard questions (MRR 0.46→0.61);
+    # the MS MARCO cross-encoder hurts on code (std MRR 0.88→0.83), so reranking stays off.
+    rerank: bool = False
+    rerank_backend: Literal["cross-encoder", "stub"] = "cross-encoder"
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"   # ~90 MB, CPU-friendly; try BAAI/bge-reranker-base
+    rerank_depth: int = 30       # candidates the cross-encoder re-scores
+    rerank_max_length: int = 512
+    query_rewrite: bool = True
+    rewrite_prompt_id: str = "rewrite_v1"
     context_token_budget: int = 6000
 
     # Generation: Ollama (local) or any OpenAI-compatible endpoint (Groq free tier, etc.)
@@ -54,6 +64,7 @@ class Settings(BaseSettings):
 
     # Storage
     data_dir: Path = Path(".codecopilot")
+    cache_dir: Path = Path(".cache")   # LLM response cache (rewrites), shared across indexes
 
 
 settings = Settings()

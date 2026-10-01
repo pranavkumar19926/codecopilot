@@ -2,6 +2,7 @@
 Application code never calls a provider directly — it calls LLMClient."""
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import time
@@ -57,8 +58,24 @@ class LLMClient:
                     raise LLMError(f"LLM request failed after {attempt + 1} attempt(s): {e}") from e
                 time.sleep(min(2 ** attempt, 20) + random.random())
 
-    def chat(self, messages: list[dict]) -> str:
-        return "".join(self.stream_chat(messages))
+    def chat(self, messages: list[dict], use_cache: bool = True) -> str:
+        """Non-streaming call. Cached on disk, keyed by everything that can change the output
+        (provider, model, temperature, context size, full messages), so eval reruns cost nothing."""
+        key = self._cache_key(messages)
+        path = self.cfg.cache_dir / "llm" / key[:2] / f"{key}.json"
+        if use_cache and path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))["response"]
+        text = "".join(self.stream_chat(messages))
+        if use_cache:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"model": self.cfg.llm_model, "messages": messages, "response": text}),
+                            encoding="utf-8")
+        return text
+
+    def _cache_key(self, messages: list[dict]) -> str:
+        c = self.cfg
+        blob = json.dumps([c.llm_provider, c.llm_model, c.llm_temperature, c.llm_num_ctx, messages], sort_keys=True)
+        return hashlib.sha256(blob.encode()).hexdigest()
 
     def _parse_stream_line(self, line: str) -> str:
         if not line:

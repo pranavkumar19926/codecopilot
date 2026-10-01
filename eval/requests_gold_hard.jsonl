@@ -1,0 +1,27 @@
+// Hard gold set for psf/requests @ 611c616 (Phase 3). Written to defeat lexical overlap:
+// plain user vocabulary, no function names, behaviour and why questions. Lines resolved from exact source text.
+// type: paraphrase = where/how without code words; behavior = what happens when X; why = rationale in comments/docstrings.
+{"question": "If I POST a form and the server answers 'see other', what method does the follow-up request use?", "path": "src/requests/sessions.py", "line": 379, "type": "behavior"}
+{"question": "Why does a POST become a GET after a permanent move, even though the spec says otherwise?", "path": "src/requests/sessions.py", "line": 389, "type": "why"}
+{"question": "What stops a client from bouncing between redirects forever?", "path": "src/requests/sessions.py", "line": 217, "type": "behavior"}
+{"question": "When a redirect is followed, why are the body and content headers thrown away?", "path": "src/requests/sessions.py", "line": 255, "type": "why"}
+{"question": "How does a redirect target like '/login' with no domain get turned into a full address?", "path": "src/requests/sessions.py", "line": 241, "type": "paraphrase"}
+{"question": "If the original link had a #section anchor, is it kept after being redirected?", "path": "src/requests/sessions.py", "line": 232, "type": "behavior"}
+{"question": "Where is the chain of earlier responses recorded so I can inspect every hop later?", "path": "src/requests/sessions.py", "line": 209, "type": "paraphrase"}
+{"question": "Where are callbacks set on the client combined with ones passed for a single call?", "path": "src/requests/sessions.py", "line": 108, "type": "paraphrase"}
+{"question": "How do I release every open network connection a client is holding?", "path": "src/requests/sessions.py", "line": 886, "type": "paraphrase"}
+{"question": "What headers go out on every call unless I override them?", "path": "src/requests/utils.py", "line": 951, "type": "paraphrase"}
+{"question": "Why does `if response:` come out false for a 404 page?", "path": "src/requests/models.py", "line": 837, "type": "why"}
+{"question": "How can I read a huge streamed reply one line at a time?", "path": "src/requests/models.py", "line": 1000, "type": "paraphrase"}
+{"question": "What goes wrong if I loop over a streamed body a second time?", "path": "src/requests/models.py", "line": 959, "type": "behavior"}
+{"question": "How is broken chunked transfer data from the server surfaced to me?", "path": "src/requests/models.py", "line": 941, "type": "behavior"}
+{"question": "If I pass a dict as the json argument, what content type gets sent?", "path": "src/requests/models.py", "line": 591, "type": "behavior"}
+{"question": "What happens when I upload from a generator whose total size is unknown?", "path": "src/requests/models.py", "line": 630, "type": "behavior"}
+{"question": "What error do I get if I forget the http:// part of the address?", "path": "src/requests/models.py", "line": 516, "type": "behavior"}
+{"question": "Where does a connection that stalls in the middle of a download get reported as a timeout?", "path": "src/requests/adapters.py", "line": 742, "type": "behavior"}
+{"question": "What is raised when the server can't even be reached within the time limit?", "path": "src/requests/adapters.py", "line": 717, "type": "behavior"}
+{"question": "How do a username and password written inside a proxy address get sent to that proxy?", "path": "src/requests/adapters.py", "line": 630, "type": "paraphrase"}
+{"question": "Why does the request line contain the full URL when going through a plain HTTP proxy but only the path otherwise?", "path": "src/requests/adapters.py", "line": 595, "type": "why"}
+{"question": "Where is the limit on how many connections are kept open per host stored?", "path": "src/requests/adapters.py", "line": 218, "type": "paraphrase"}
+{"question": "How does the outgoing request pick up a Cookie header from the stored cookies?", "path": "src/requests/cookies.py", "line": 153, "type": "paraphrase"}
+{"question": "Where is the table that maps numbers like 404 to friendly names like not_found?", "path": "src/requests/status_codes.py", "line": 23, "type": "paraphrase"}

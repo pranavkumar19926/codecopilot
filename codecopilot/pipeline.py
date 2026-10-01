@@ -14,6 +14,8 @@ from .bm25 import BM25Index, identifier_terms, rrf
 from .index import Hit, VectorIndex
 from .llm import LLMClient
 from .prompts import load_prompt
+from .rerank import Reranker
+from .rewrite import rewrite_query
 
 # Accept [path:a-b] (what the prompt asks for) and `path:a-b` (what small models often write instead).
 _CITE_RE = re.compile(r"[\[`]([^\[\]`\s]+?\.\w+):(\d+)-(\d+)[\]`]")
@@ -54,43 +56,80 @@ class Answer:
 
 class Copilot:
     def __init__(self, cfg: Settings, index: VectorIndex, embedder: Embedder | None,
-                 llm: LLMClient | None = None, bm25: BM25Index | None = None):
+                 llm: LLMClient | None = None, bm25: BM25Index | None = None, reranker: Reranker | None = None):
         self.cfg, self.index, self.embedder, self.llm, self.bm25 = cfg, index, embedder, llm, bm25
+        self.reranker = reranker
         self.prompt = load_prompt(cfg.prompt_id)
+        self.last_rewrites: list[str] = []
 
-    def retrieve(self, question: str, k: int | None = None, mode: str | None = None) -> list[Hit]:
-        """mode: dense (Phase 1) | bm25 | hybrid (dense + BM25 fused with RRF, Phase 2 default)."""
-        k, mode = k or self.cfg.top_k, mode or self.cfg.retrieval_mode
-        depth = max(k, self.cfg.fusion_depth)
+    def _rank(self, query: str, mode: str, depth: int) -> tuple[list[tuple[int, float]], dict[str, list[int]]]:
+        """First stage for one query string: dense and/or BM25 ranked lists, fused with RRF."""
         rankings: dict[str, list[int]] = {}
         if mode in ("dense", "hybrid"):
             if self.embedder is None:
                 raise RuntimeError(f"retrieval mode {mode!r} needs an embedder")
-            dense = self.index.search(self.embedder.embed_query(question), depth)
+            dense = self.index.search(self.embedder.embed_query(query), depth)
             pos = {id(c): i for i, c in enumerate(self.index.chunks)}
             rankings["dense"] = [pos[id(h.chunk)] for h in dense]
         if mode in ("bm25", "hybrid"):
             if self.bm25 is None:
                 raise RuntimeError("No BM25 index found. Re-run `codecopilot index <repo>`.")
-            rankings["bm25"] = [doc for doc, _ in self.bm25.search(question, depth)]
+            rankings["bm25"] = [doc for doc, _ in self.bm25.search(query, depth)]
         if not rankings:
             raise ValueError(f"unknown retrieval mode {mode!r}")
-
         if len(rankings) == 1:
-            (name, ranking), = rankings.items()
-            fused = [(doc, 1.0 / (self.cfg.rrf_k + r)) for r, doc in enumerate(ranking, 1)]
-        else:
-            fused = rrf(list(rankings.values()), self.cfg.rrf_k)
+            (ranking,) = rankings.values()
+            return [(doc, 1.0 / (self.cfg.rrf_k + r)) for r, doc in enumerate(ranking, 1)], rankings
+        return rrf(list(rankings.values()), self.cfg.rrf_k), rankings
+
+    def retrieve(self, question: str, k: int | None = None, mode: str | None = None,
+                 rerank: bool | None = None, rewrite: bool | None = None) -> list[Hit]:
+        """Stages: [rewrite → multi-query] → dense/BM25 → RRF → symbol pins → [cross-encoder rerank] → top-k.
+        mode: dense (Phase 1) | bm25 | hybrid (Phase 2). rerank / rewrite: Phase 3, default from config."""
+        k, mode = k or self.cfg.top_k, mode or self.cfg.retrieval_mode
+        rerank = self.cfg.rerank if rerank is None else rerank
+        rewrite = self.cfg.query_rewrite if rewrite is None else rewrite
+        depth = max(k, self.cfg.fusion_depth, self.cfg.rerank_depth if rerank else 0)
+
+        fused, rankings = self._rank(question, mode, depth)
+        self.last_rewrites = []
+        if rewrite:
+            if self.llm is None:
+                raise RuntimeError("query rewriting needs an LLM")
+            self.last_rewrites = rewrite_query(self.llm, question, self.cfg.rewrite_prompt_id)
+            lists = [[d for d, _ in fused]] * 2  # original question counts twice
+            for q in self.last_rewrites:
+                lists.append([d for d, _ in self._rank(q, mode, depth)[0]])
+            fused = rrf(lists, self.cfg.rrf_k)
+
         # Symbol lookup: an identifier in the query that names a definition goes to rank 1, like
         # go-to-definition. Rank fusion alone can demote an exact match that only one retriever found.
         pinned = self._pinned(question) if (mode != "dense" and self.cfg.symbol_pin) else []
-        if pinned:
-            top = 1.0 / self.cfg.rrf_k + (fused[0][1] if fused else 0.0)
-            fused = [(d, top) for d in pinned] + [(d, s) for d, s in fused if d not in set(pinned)]
+        rest = [(d, s) for d, s in fused if d not in set(pinned)]
+
+        rerank_rank: dict[int, int] = {}
+        if rerank:
+            if self.reranker is None:
+                raise RuntimeError("reranking needs a reranker")
+            n = max(self.cfg.rerank_depth - len(pinned), 0)
+            cands, tail = rest[:n], rest[n:]
+            scores = self.reranker.score(question, [self.index.chunks[d].embed_text for d, _ in cands])
+            cands = sorted(((d, sc) for (d, _), sc in zip(cands, scores)), key=lambda x: -x[1])
+            rerank_rank = {d: r for r, (d, _) in enumerate(cands, 1)}
+            rest = cands + tail
+
+        top = (rest[0][1] if rest else 0.0) + 1.0
+        ordered = [(d, top) for d in pinned] + rest
         rank_of = {name: {doc: r for r, doc in enumerate(rk, 1)} for name, rk in rankings.items()}
-        return [Hit(self.index.chunks[doc], score,
-                    {**{name: rank_of[name].get(doc) for name in rankings}, **({"symbol": True} if doc in pinned else {})})
-                for doc, score in fused[:k]]
+        hits = []
+        for doc, score in ordered[:k]:
+            detail = {name: rank_of[name].get(doc) for name in rankings}
+            if doc in pinned:
+                detail["symbol"] = True
+            if doc in rerank_rank:
+                detail["rerank"] = rerank_rank[doc]
+            hits.append(Hit(self.index.chunks[doc], score, detail))
+        return hits
 
     def _pinned(self, question: str) -> list[int]:
         terms = identifier_terms(question)
@@ -135,6 +174,8 @@ class Copilot:
             "prompt_id": self.prompt.id, "prompt_hash": self.prompt.version_hash,
             "llm": f"{self.cfg.llm_provider}:{self.cfg.llm_model}", "embed_model": self.index.meta["embed_model"],
             "retrieval_mode": self.cfg.retrieval_mode, "chunker": self.index.meta.get("chunker", "fixed"),
+            "rerank": self.cfg.rerank and (self.reranker.name if self.reranker else None),
+            "rewrites": self.last_rewrites,
             "retrieved": [{"citation": h.chunk.citation, "symbol": h.chunk.symbol, "score": round(h.score, 4),
                            "ranks": h.detail} for h in ans.hits],
             "answer": ans.text, "citation_check": ans.citation_check,

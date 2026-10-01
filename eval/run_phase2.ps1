@@ -8,12 +8,12 @@ Remove-Item Env:CC_EXCLUDE_GLOBS -ErrorAction SilentlyContinue   # -x below sets
 Write-Host "`n=== Fixed 60-line chunks (Phase 1 chunking) ===" -ForegroundColor Cyan
 $env:CC_DATA_DIR = ".cc_fixed"
 codecopilot index $repo -c fixed -x "tests/*" -x "docs/*"
-codecopilot eval eval\requests_gold.jsonl -m all --save p2-fixed
+codecopilot eval eval\requests_gold.jsonl -m all --no-rerank --no-rewrite --save p2-fixed
 
 Write-Host "`n=== AST chunks (Phase 2) ===" -ForegroundColor Cyan
 $env:CC_DATA_DIR = ".cc_ast"
 codecopilot index $repo -c ast -x "tests/*" -x "docs/*"
-codecopilot eval eval\requests_gold.jsonl -m all --save p2-ast
+codecopilot eval eval\requests_gold.jsonl -m all --no-rerank --no-rewrite --save p2-ast
 
 Write-Host "`n=== All saved runs ===" -ForegroundColor Cyan
 codecopilot report
