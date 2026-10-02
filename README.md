@@ -7,7 +7,8 @@ Ask questions about a repository; get answers with `path:start-end` citations to
 | 1 | Fixed 60-line chunks → dense embeddings → local LLM answer with citations; 50-question gold set | done |
 | 2 | Tree-sitter AST chunks + BM25 keyword search + reciprocal rank fusion + symbol lookup | done |
 | 3 | Hard gold set, cross-encoder reranking, LLM query rewriting, response cache, latency | done |
-| 4 | Call-graph expansion, strict citation enforcement | **next** |
+| 4 | Call graph (callers / callees / impact), graph expansion, strict citations with repair | done |
+| — | Website, then free deployment (Hugging Face Spaces + Groq) | **next** |
 
 ## Setup
 
@@ -40,6 +41,8 @@ In `search`, a `*` before the symbol means it was pinned by symbol lookup.
 
 Full Phase 2 comparison on Windows: `.\eval\run_phase2.ps1` (builds both indexes, runs all 6 evals, prints the table).
 Full Phase 3 comparison: `powershell -ExecutionPolicy Bypass -File .\eval\run_phase3.ps1` (needs Ollama running).
+
+Full Phase 4 run: `powershell -ExecutionPolicy Bypass -File .\eval\run_phase4.ps1`.
 
 Phase 3 flags on `search`, `ask`, `eval`: `--rerank/--no-rerank`, `--rewrite/--no-rewrite`. Rewriting is on by default and needs Ollama running; add `--no-rewrite` to search without it.
 
@@ -142,6 +145,85 @@ the trade-off has to be visible.
 A/B a stronger reranker: `$env:CC_RERANK_MODEL="BAAI/bge-reranker-base"` (~1.1 GB, slower on CPU), then re-run
 the rerank evals with a new `--save` label.
 
+## Phase 4: call graph and strict citations
+
+Retrieval finds code by **content**. "What calls `rebuild_auth`?" is about a **relationship**: the caller
+(`resolve_redirects`) never mentions auth or headers, so no similarity search will rank it. Phase 4 adds a static
+call graph and uses it twice: as commands, and to widen the context given to the LLM.
+
+### The call graph (`graph.py`)
+Built with tree-sitter at index time (`graph.json` next to the index). Nodes are every function, method and class
+(including methods of small classes that share one chunk). Edges:
+
+| edge | example |
+|---|---|
+| call | `self.rebuild_auth(...)` inside `resolve_redirects` |
+| decorator | `@admin_required` on `dashboard` → `dashboard` depends on `admin_required` |
+| instantiate | `Session()` → the `Session` class |
+| inherit | `class Session(SessionRedirectMixin)` |
+
+Python is dynamically typed, so resolution is **conservative**: `self.x` → the enclosing class or its bases;
+bare `x()` → same file, then imports, then a unique top-level definition; `Name.x` → class `Name`; any other
+`obj.x()` only if exactly one definition has that name and it isn't a generic name like `get` / `send`.
+Missing an edge is preferred over inventing one. On `requests`: 320 definitions, 259 edges (174 calls,
+48 instantiations, 37 inheritance), 109 ambiguous references dropped.
+
+```bash
+codecopilot callers get_auth_from_url        # who calls it, and on which line
+codecopilot callees Session.send             # what it calls, and where those are defined
+codecopilot impact should_strip_auth         # transitive callers = what could break if it changes
+```
+
+### Graph expansion in `ask`
+After retrieval, the top hits' 1-hop neighbours are added to the LLM context (marked "related"), steered by
+the question: *what calls / uses / breaks* → callers, *what does X call* → callees, anything else → both
+(callees weighted higher). Neighbours that retrieval also ranked well win ties. This is off for `eval` on the
+old gold sets, so Phase 2–3 numbers are unchanged.
+
+### Strict citations (`citations.py`)
+1. Context lines are numbered (`  216| raise TooManyRedirects(`), so the model can cite exact lines.
+2. Prompt `answer_v3` requires a narrow `[path:start-end]` on every factual sentence.
+3. Every sentence is checked: **invalid** (range not shown to the model), **unsupported** (a `name` in the
+   sentence doesn't occur in the cited lines), **uncited** (names code, cites nothing), **broad** (>40 lines).
+4. If the check fails, the problems are sent back to the model **once** and the revision is kept only if it
+   scores better. `ask` shows the draft, the problems and the revision.
+
+### Evaluation
+* `eval/requests_gold_trace.jsonl`: 25 questions with 49 required locations (all callers of X, or what X
+  calls). The answer key was built with `grep`, **not** with the graph. Metric: share of required locations in
+  the context. The comparison is fair: the no-graph baseline gets the same number of extra chunks from plain retrieval.
+* `codecopilot eval-answers`: script-checkable answer metrics, with no LLM judge: gold line cited, valid-citation rate,
+  claims cited, unsupported names per answer, mean citation width.
+
+### Results (requests @ 611c616, bge-small + qwen2.5-coder:7b on CPU)
+
+| Trace set (25 q, 49 required locations) | target recall | all targets found |
+|---|---|---|
+| top-8 + 2.6 more chunks from retrieval, no graph | 0.777 | 0.680 |
+| **top-8 + 2.6 chunks from graph expansion** | **1.000** | **1.000** |
+
+At the same context size, the graph found every caller and callee for every question. Callee questions gain the most
+(0.50 → 1.00): "what does X call" is invisible to similarity search.
+
+| Answers (6 q, standard set) | gold line cited | valid citations | claims cited | unsupported / answer | mean width |
+|---|---|---|---|---|---|
+| plain (Phase 3 prompt) | 0.833 | 1.000 | 0.583 | 0.33 | 34.6 lines |
+| **strict (Phase 4)** | **1.000** | 1.000 | **1.000** | 0.33 | **16.4 lines** |
+
+Strict mode cites every claim, with ranges half as wide; the repair round fired on 3/6 answers. Unsupported names did
+not improve. n=6 is small: this shows direction, not a precise effect size.
+
+**Regression finding: LLM non-determinism.** The Phase 4 rerun of the old gold sets came out slightly lower
+(standard MRR 0.886 → 0.857, hard 0.606 → 0.581; 1–2 questions each). Phase 4 retrieval code didn't cause it:
+raising the answer model's context window changed the cache key, so query rewrites were regenerated at temperature
+0.1 and came out differently. Rewrites now use temperature 0, a fixed seed and their own fixed context size, so
+they're reproducible and independent of answer settings. Takeaway: the rewriting gain on the hard set is real
+(MRR 0.46 → ~0.58–0.61), but single-run figures with a sampling LLM carry about ±1–2 questions of noise.
+
+**Limits:** static analysis can't follow dynamic dispatch (`adapter.send(...)` on an unknown type), callbacks
+passed as values, or `getattr`. The identifier check proves a name is *present* in the cited lines, which is
+necessary for support but doesn't prove the claim is true.
+
 ## Configuration
 
 All settings live in `codecopilot/config.py` and can be overridden with `CC_*` env vars or a `.env` file:
@@ -153,6 +235,8 @@ All settings live in `codecopilot/config.py` and can be overridden with `CC_*` e
 | `CC_AST_MAX_LINES` / `CC_AST_MIN_LINES` | `120` / `6` | split threshold / tiny-sibling packing threshold |
 | `CC_SYMBOL_PIN` | `true` | symbol lookup stage on/off (ablate it) |
 | `CC_RRF_K` / `CC_FUSION_DEPTH` | `60` / `50` | fusion constant / candidates per retriever |
+| `CC_GRAPH_EXPAND` / `CC_GRAPH_MAX_EXTRA` | `true` / `4` | call-graph context expansion (doubled for caller/callee questions) |
+| `CC_STRICT_CITATIONS` / `CC_MAX_REPAIRS` | `true` / `1` | claim-level citation check + repair rounds |
 | `CC_RERANK` / `CC_QUERY_REWRITE` | `false` / `true` | Phase 3 stages, set from the results above |
 | `CC_RERANK_MODEL` / `CC_RERANK_DEPTH` | MiniLM-L6 / `30` | cross-encoder and how many candidates it re-scores |
 | `CC_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Try `jinaai/jina-embeddings-v2-base-code` for a code-tuned A/B |
@@ -181,6 +265,8 @@ codecopilot/
   prompts/      versioned prompt files; prompts.py loads them by id and hashes them
   rerank.py     cross-encoder reranker (+ offline stub for tests)
   rewrite.py    LLM query rewriting → multi-query retrieval
+  graph.py      tree-sitter call graph: definitions, call/decorator/instantiate/inherit edges, impact
+  citations.py  sentence-level citation checker (invalid / unsupported / uncited / broad)
   pipeline.py   retrieve ([rewrite] → dense/bm25 → RRF → symbol pin → [rerank]) → context → generate → citations → run log
   evaluate.py   recall@k, MRR, hit@1 per question type
   cli.py
@@ -188,6 +274,8 @@ eval/requests_gold.jsonl   50 labelled questions (35 semantic, 5 why, 10 identif
 eval/requests_gold_hard.jsonl  24 hard questions, no identifiers (paraphrase / behavior / why)
 eval/run_phase2.ps1        full fixed-vs-AST × dense/bm25/hybrid comparison
 eval/run_phase3.ps1        rerank × rewrite comparison on both gold sets
+eval/requests_gold_trace.jsonl 25 caller/callee questions, 49 grep-verified target lines
+eval/run_phase4.ps1        graph + strict-citation evaluation
 eval/results.jsonl         every saved eval run (commit this)
 ```
 

@@ -17,7 +17,7 @@ def test_parse_rewrites_strips_numbering_bullets_and_dupes():
 def test_llm_cache_hits_skip_the_network(tmp_path, monkeypatch):
     llm = LLMClient(Settings(cache_dir=tmp_path))
     calls = []
-    monkeypatch.setattr(llm, "stream_chat", lambda m: (calls.append(1), iter(["a", "b"]))[1])
+    monkeypatch.setattr(llm, "stream_chat", lambda m, **kw: (calls.append(1), iter(["a", "b"]))[1])
     msgs = [{"role": "user", "content": "q"}]
     assert llm.chat(msgs) == "ab" and llm.chat(msgs) == "ab"
     assert len(calls) == 1
@@ -40,7 +40,7 @@ class FakeLLM:
     def __init__(self, reply):
         self.reply, self.calls = reply, 0
 
-    def chat(self, messages, use_cache=True):
+    def chat(self, messages, use_cache=True, **kw):
         self.calls += 1
         return self.reply
 

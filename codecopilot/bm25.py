@@ -49,8 +49,14 @@ def identifier_terms(query: str) -> set[str]:
     doesn't pin the `session()` function."""
     words = _IDENT.findall(query)
     ticked = set(re.findall(r"`([A-Za-z_][A-Za-z0-9_.]*)`", query))
-    terms = {w for w in words if ("_" in w.strip("_") or _CAMEL.search(w) or w in ticked)}
-    terms |= {t.split(".")[-1] for t in ticked}
+    # `Session.send` / Session.send: keep the qualified name and drop its parts, so the lookup pins the method,
+    # not the class and every other `send`.
+    dotted = set(re.findall(r"\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)\b", query.replace("`", "")))
+    dotted = {d for d in dotted if not re.search(r"\.(py|md|txt|com|org)$", d)}
+    parts = {p for d in dotted for p in d.split(".")}
+    terms = {w for w in words if ("_" in w.strip("_") or _CAMEL.search(w) or w in ticked) and w not in parts}
+    terms |= {t.split(".")[-1] for t in ticked if "." not in t}
+    terms |= dotted
     if len(words) == 1:
         terms.add(words[0])
     return {t.lower() for t in terms}

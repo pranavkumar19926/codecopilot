@@ -1,6 +1,6 @@
 [project]
 name = "codecopilot"
-version = "0.3.0"
+version = "0.4.1"
 description = "Codebase Intelligence Copilot — grounded Q&A over a repository with path:line citations"
 requires-python = ">=3.10"
 dependencies = [

@@ -11,6 +11,8 @@ import re
 from .llm import LLMClient
 from .prompts import load_prompt
 
+REWRITE_NUM_CTX = 4096
+
 _LEAD = re.compile(r"^\s*(?:[-*•]|\d+[.):]|line\s*\d+\s*:)\s*", re.IGNORECASE)
 
 
@@ -25,4 +27,6 @@ def parse_rewrites(text: str, max_n: int = 3) -> list[str]:
 
 def rewrite_query(llm: LLMClient, question: str, prompt_id: str = "rewrite_v1") -> list[str]:
     prompt = load_prompt(prompt_id)
-    return parse_rewrites(llm.chat(prompt.render(question=question)))
+    # temperature 0 + fixed seed + fixed small context: rewrites are reproducible, so retrieval evals don't
+    # drift between runs, and changing the answer model's context size doesn't invalidate the rewrite cache.
+    return parse_rewrites(llm.chat(prompt.render(question=question), temperature=0.0, num_ctx=REWRITE_NUM_CTX))

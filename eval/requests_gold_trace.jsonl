@@ -1,0 +1,28 @@
+// Trace gold set for psf/requests @ 611c616 (Phase 4): caller / callee questions with several required locations.
+// Targets were found with grep on the source (call sites for 'callers', def lines for 'callees'), NOT with the
+// call graph, so the graph is graded against an independent answer key. Metric: share of targets present in context.
+{"question": "What calls rebuild_auth?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 273}]}
+{"question": "Which function uses should_strip_auth to decide what to do?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 324}]}
+{"question": "What would break if I changed the signature of get_netrc_auth?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 330}, {"path": "src/requests/sessions.py", "line": 538}]}
+{"question": "Which functions call merge_setting?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 124}, {"path": "src/requests/sessions.py", "line": 547}, {"path": "src/requests/sessions.py", "line": 863}]}
+{"question": "Where is super_len used?", "type": "callers", "targets": [{"path": "src/requests/models.py", "line": 605}, {"path": "src/requests/models.py", "line": 657}]}
+{"question": "Who calls select_proxy?", "type": "callers", "targets": [{"path": "src/requests/adapters.py", "line": 483}, {"path": "src/requests/adapters.py", "line": 535}, {"path": "src/requests/adapters.py", "line": 583}]}
+{"question": "Where is dispatch_hook invoked?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 791}]}
+{"question": "What calls prepare_url?", "type": "callers", "targets": [{"path": "src/requests/models.py", "line": 441}]}
+{"question": "Where is requote_uri used?", "type": "callers", "targets": [{"path": "src/requests/models.py", "line": 562}, {"path": "src/requests/sessions.py", "line": 241}]}
+{"question": "Which code depends on default_headers?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 446}]}
+{"question": "Where is get_encoding_from_headers used?", "type": "callers", "targets": [{"path": "src/requests/adapters.py", "line": 385}, {"path": "src/requests/utils.py", "line": 659}]}
+{"question": "What would be affected if rewind_body changed?", "type": "callers", "targets": [{"path": "src/requests/sessions.py", "line": 284}]}
+{"question": "Who uses _basic_auth_str?", "type": "callers", "targets": [{"path": "src/requests/adapters.py", "line": 630}, {"path": "src/requests/auth.py", "line": 112}, {"path": "src/requests/auth.py", "line": 120}, {"path": "src/requests/sessions.py", "line": 366}]}
+{"question": "Where is get_auth_from_url called?", "type": "callers", "targets": [{"path": "src/requests/adapters.py", "line": 284}, {"path": "src/requests/adapters.py", "line": 627}, {"path": "src/requests/models.py", "line": 679}, {"path": "src/requests/sessions.py", "line": 359}]}
+{"question": "What calls should_bypass_proxies?", "type": "callers", "targets": [{"path": "src/requests/utils.py", "line": 879}, {"path": "src/requests/utils.py", "line": 932}]}
+{"question": "Where is check_header_validity used?", "type": "callers", "targets": [{"path": "src/requests/models.py", "line": 572}]}
+{"question": "Where is guess_json_utf used?", "type": "callers", "targets": [{"path": "src/requests/models.py", "line": 1106}]}
+{"question": "What methods does resolve_redirects call to rebuild the next request?", "type": "callees", "targets": [{"path": "src/requests/sessions.py", "line": 309}, {"path": "src/requests/sessions.py", "line": 334}, {"path": "src/requests/sessions.py", "line": 370}]}
+{"question": "What does Session.send call?", "type": "callees", "targets": [{"path": "src/requests/sessions.py", "line": 870}, {"path": "src/requests/hooks.py", "line": 32}, {"path": "src/requests/sessions.py", "line": 186}]}
+{"question": "What functions does rebuild_auth depend on?", "type": "callees", "targets": [{"path": "src/requests/sessions.py", "line": 154}, {"path": "src/requests/utils.py", "line": 231}]}
+{"question": "What does merge_environment_settings call?", "type": "callees", "targets": [{"path": "src/requests/sessions.py", "line": 76}, {"path": "src/requests/utils.py", "line": 873}]}
+{"question": "Which functions rely on the helper that measures the length of a request body?", "type": "natural", "targets": [{"path": "src/requests/models.py", "line": 605}, {"path": "src/requests/models.py", "line": 657}]}
+{"question": "What code is affected if the logic that decides to remove credentials on a cross-host redirect changes?", "type": "natural", "targets": [{"path": "src/requests/sessions.py", "line": 324}]}
+{"question": "When following a redirect, which helper methods are used to rebuild the next request?", "type": "natural", "targets": [{"path": "src/requests/sessions.py", "line": 309}, {"path": "src/requests/sessions.py", "line": 334}, {"path": "src/requests/sessions.py", "line": 370}]}
+{"question": "Who invokes the response hooks after a request is sent?", "type": "natural", "targets": [{"path": "src/requests/sessions.py", "line": 791}]}

@@ -25,18 +25,22 @@ class LLMClient:
         headers = {"Authorization": f"Bearer {cfg.llm_api_key}"} if cfg.llm_api_key else {}
         self._http = httpx.Client(base_url=cfg.llm_base_url.rstrip("/"), timeout=cfg.llm_timeout_s, headers=headers)
 
-    def _request(self, messages: list[dict], stream: bool) -> tuple[str, dict]:
+    def _request(self, messages: list[dict], stream: bool, temperature: float | None = None,
+                 num_ctx: int | None = None) -> tuple[str, dict]:
         c = self.cfg
+        temp = c.llm_temperature if temperature is None else temperature
+        ctx = c.llm_num_ctx if num_ctx is None else num_ctx
         if c.llm_provider == "ollama":
             # Ollama's default context window (2–4k tokens) silently truncates our ~6k-token prompt
             # from the front, dropping the system prompt and question. Always set num_ctx explicitly.
             return "/api/chat", {"model": c.llm_model, "messages": messages, "stream": stream,
-                                 "options": {"temperature": c.llm_temperature, "num_ctx": c.llm_num_ctx}}
+                                 "options": {"temperature": temp, "num_ctx": ctx, "seed": c.llm_seed}}
         return "/chat/completions", {"model": c.llm_model, "messages": messages, "stream": stream,
-                                     "temperature": c.llm_temperature}
+                                     "temperature": temp, "seed": c.llm_seed}
 
-    def stream_chat(self, messages: list[dict]) -> Iterator[str]:
-        path, body = self._request(messages, stream=True)
+    def stream_chat(self, messages: list[dict], temperature: float | None = None,
+                    num_ctx: int | None = None) -> Iterator[str]:
+        path, body = self._request(messages, stream=True, temperature=temperature, num_ctx=num_ctx)
         for attempt in range(self.cfg.llm_max_retries + 1):
             started = False
             try:
@@ -58,23 +62,27 @@ class LLMClient:
                     raise LLMError(f"LLM request failed after {attempt + 1} attempt(s): {e}") from e
                 time.sleep(min(2 ** attempt, 20) + random.random())
 
-    def chat(self, messages: list[dict], use_cache: bool = True) -> str:
+    def chat(self, messages: list[dict], use_cache: bool = True, temperature: float | None = None,
+             num_ctx: int | None = None) -> str:
         """Non-streaming call. Cached on disk, keyed by everything that can change the output
-        (provider, model, temperature, context size, full messages), so eval reruns cost nothing."""
-        key = self._cache_key(messages)
+        (provider, model, temperature, seed, context size, full messages), so eval reruns cost nothing.
+        Callers that need reproducibility (query rewriting) pass temperature=0 and a fixed num_ctx."""
+        key = self._cache_key(messages, temperature, num_ctx)
         path = self.cfg.cache_dir / "llm" / key[:2] / f"{key}.json"
         if use_cache and path.exists():
             return json.loads(path.read_text(encoding="utf-8"))["response"]
-        text = "".join(self.stream_chat(messages))
+        text = "".join(self.stream_chat(messages, temperature=temperature, num_ctx=num_ctx))
         if use_cache:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"model": self.cfg.llm_model, "messages": messages, "response": text}),
                             encoding="utf-8")
         return text
 
-    def _cache_key(self, messages: list[dict]) -> str:
+    def _cache_key(self, messages: list[dict], temperature: float | None = None, num_ctx: int | None = None) -> str:
         c = self.cfg
-        blob = json.dumps([c.llm_provider, c.llm_model, c.llm_temperature, c.llm_num_ctx, messages], sort_keys=True)
+        temp = c.llm_temperature if temperature is None else temperature
+        ctx = c.llm_num_ctx if num_ctx is None else num_ctx
+        blob = json.dumps([c.llm_provider, c.llm_model, temp, c.llm_seed, ctx, messages], sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()
 
     def _parse_stream_line(self, line: str) -> str:

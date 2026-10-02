@@ -50,17 +50,29 @@ class Settings(BaseSettings):
     rewrite_prompt_id: str = "rewrite_v1"
     context_token_budget: int = 6000
 
+    # Phase 4: call graph + strict citations
+    graph_expand: bool = True     # add callers/callees of the top hits to the context
+    graph_seeds: int = 3          # how many top hits to expand from
+    graph_max_extra: int = 4      # extra chunks added (doubled for "what calls X" questions)
+    impact_depth: int = 3         # transitive depth for `codecopilot impact`
+    strict_citations: bool = True # check every claim; one repair round if the check fails
+    context_line_numbers: bool = True
+    max_repairs: int = 1
+    broad_lines: int = 40         # citations wider than this are reported as "broad"
+    repair_prompt_id: str = "repair_v1"
+
     # Generation: Ollama (local) or any OpenAI-compatible endpoint (Groq free tier, etc.)
     llm_provider: Literal["ollama", "openai_compat"] = "ollama"
     llm_model: str = "qwen2.5-coder:7b"
     llm_base_url: str = "http://localhost:11434"
     llm_api_key: str = ""
     llm_temperature: float = 0.1
-    llm_num_ctx: int = 8192  # Ollama context window; must exceed context_token_budget + prompt + answer
+    llm_seed: int = 42             # fixed sampling seed (Ollama / OpenAI-compatible) for reproducible runs
+    llm_num_ctx: int = 10240  # Ollama context window; must exceed context_token_budget + prompt + answer
     llm_timeout_s: float = 300.0  # CPU prompt processing of ~6k tokens can take a minute+
     llm_max_retries: int = 3
 
-    prompt_id: str = "answer_v2"
+    prompt_id: str = "answer_v3"   # answer_v2 = Phase 1-3 prompt (no line numbers)
 
     # Storage
     data_dir: Path = Path(".codecopilot")

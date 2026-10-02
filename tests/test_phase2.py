@@ -117,7 +117,8 @@ def test_identifier_terms_ignore_plain_english():
     assert identifier_terms("How does a session merge settings?") == set()
     assert identifier_terms("what calls prepare_hooks") == {"prepare_hooks"}
     assert identifier_terms("LookupDict") == {"lookupdict"}
-    assert identifier_terms("who uses `Session.send`?") >= {"send"}
+    assert identifier_terms("who uses `Session.send`?") == {"session.send"}
+    assert identifier_terms("What does Session.send call?") == {"session.send"}
 
 
 def test_rrf_rewards_agreement():
