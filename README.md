@@ -220,6 +220,16 @@ raising the answer model's context window changed the cache key, so query rewrit
 they're reproducible and independent of answer settings. Takeaway: the rewriting gain on the hard set is real
 (MRR 0.46 → ~0.58–0.61), but single-run figures with a sampling LLM carry about ±1–2 questions of noise.
 
+**Deterministic reference numbers** (temperature 0, seed 42; two consecutive runs gave identical results; the
+cached rerun took 149 ms p50 vs 2357 ms):
+
+| Gold set | recall@10 | MRR | hit@1 |
+|---|---|---|---|
+| standard (50) | 1.000 | 0.865 | 0.780 |
+| hard (24) | 0.958 | 0.592 | 0.375 |
+
+Against Phase 2 on the hard set (MRR 0.458, hit@1 0.292), rewriting still adds +0.13 MRR.
+
 **Limits:** static analysis can't follow dynamic dispatch (`adapter.send(...)` on an unknown type), callbacks
 passed as values, or `getattr`. The identifier check proves a name is *present* in the cited lines, which is
 necessary for support but doesn't prove the claim is true.
