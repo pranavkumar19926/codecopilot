@@ -30,6 +30,14 @@ _SKIP = frozenset({"None", "True", "False", "self", "cls", "str", "int", "dict",
                    "class", "return", "raise", "if", "else", "for", "in", "and", "or", "not"})
 
 
+_FULLWIDTH = re.compile(r"【\s*([^【】\s]+?\.\w+:\d+(?:-\d+)?)\s*】")
+
+
+def normalize_citations(text: str) -> str:
+    """gpt-oss models often write citations as 【app.py:11-13】; turn them into [app.py:11-13]."""
+    return _FULLWIDTH.sub(r"[\1]", text)
+
+
 def parse_citations(text: str) -> list[tuple[str, int, int]]:
     return [(p, int(a), int(b or a)) for p, a, b in CITE_RE.findall(text)]
 

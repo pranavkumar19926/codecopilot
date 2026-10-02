@@ -236,3 +236,27 @@ def test_repair_message_lists_citable_files(tmp_path):
     cp.answer("what calls should_strip")
     repair_msg = llm.calls[1][-1]["content"]
     assert "The only files you can cite are: pkg/" in repair_msg
+
+
+def test_draft_is_kept_when_the_repair_call_fails(tmp_path):
+    from codecopilot.llm import LLMError
+
+    class LimitedLLM(ScriptedLLM):
+        def stream_chat(self, messages, **kw):
+            if len(messages) > 2:
+                raise LLMError("the free-tier rate limit was reached")
+            yield self.chat(messages)
+
+    llm = LimitedLLM(["`should_strip` lives in [nowhere.py:1-2]."])
+    cp = _answer_copilot(tmp_path, llm)
+    parts = list(cp.ask_stream("what calls should_strip"))
+    ans = parts[-1]
+    assert isinstance(ans, Answer) and ans.text.startswith("`should_strip` lives in") and not ans.repaired
+
+
+def test_fullwidth_bracket_citations_are_understood():
+    from codecopilot.citations import normalize_citations
+    text = normalize_citations("`rebuild_auth` deletes the header 【a.py:10-12】 and calls `should_strip`【a.py:11】.")
+    assert text == "`rebuild_auth` deletes the header [a.py:10-12] and calls `should_strip`[a.py:11]."
+    rep = check_answer(text, _shown())
+    assert rep.ok and rep.n_citations == 2

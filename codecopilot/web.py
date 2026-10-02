@@ -398,7 +398,7 @@ def serve(host: str, port: int, llm: str) -> None:
 
     import uvicorn
     if llm == "groq":
-        key = os.environ.get("GROQ_API_KEY") or settings.llm_api_key
+        key = (os.environ.get("GROQ_API_KEY") or settings.llm_api_key).strip().strip('"').strip("'")
         if not key:
             raise SystemExit("Set GROQ_API_KEY first (free key: https://console.groq.com/keys).")
         settings.llm_provider = "openai_compat"
@@ -406,4 +406,5 @@ def serve(host: str, port: int, llm: str) -> None:
         settings.llm_api_key = key
         if settings.llm_model == "qwen2.5-coder:7b":
             settings.llm_model = settings.groq_model
+        settings.context_token_budget = min(settings.context_token_budget, settings.groq_context_budget)
     uvicorn.run(create_app(settings), host=host, port=port, log_level="info")

@@ -11,11 +11,11 @@ from typing import Iterator
 from .config import Settings
 from .embed import Embedder
 from .bm25 import BM25Index, identifier_terms, rrf
-from .citations import check_answer
+from .citations import check_answer, normalize_citations
 from .graph import CodeGraph
 from .graph import intent as graph_intent
 from .index import Hit, VectorIndex
-from .llm import LLMClient
+from .llm import LLMClient, LLMError
 from .prompts import load_prompt
 from .rerank import Reranker
 from .rewrite import rewrite_query
@@ -281,6 +281,7 @@ class Copilot:
             draft = "".join(draft_toks)
         else:
             draft = self.llm.chat(messages)
+        draft = normalize_citations(draft)
         draft_rep = check_answer(draft, used, self.cfg.broad_lines)
         final, final_rep, repaired = draft, draft_rep, False
 
@@ -293,22 +294,27 @@ class Copilot:
                                     + (f"\n- The only files you can cite are: "
                                        + ", ".join(sorted({h.chunk.path for h in used}))
                                        if draft_rep.invalid else ""))}]
-            if stream:
-                toks = []
-                for tok in self.llm.stream_chat(msgs2):
-                    toks.append(tok)
-                    yield tok
-                revised = "".join(toks)
-            else:
-                revised = self.llm.chat(msgs2)
-            rev_rep = check_answer(revised, used, self.cfg.broad_lines)
-            draft_had_evidence = draft_rep.n_citations - len(draft_rep.invalid) > 0
-            # Never let "I couldn't find this" replace a draft that cited real code: a refusal passes the
-            # check trivially, so without this rule the repair loop would reward giving up.
-            if rev_rep.refusal and draft_had_evidence:
-                pass
-            elif rev_rep.penalty < draft_rep.penalty:
-                final, final_rep, repaired = revised, rev_rep, True
+            try:
+                if stream:
+                    toks = []
+                    for tok in self.llm.stream_chat(msgs2):
+                        toks.append(tok)
+                        yield tok
+                    revised = "".join(toks)
+                else:
+                    revised = self.llm.chat(msgs2)
+            except LLMError:
+                revised = None   # e.g. rate limited: the draft is still a real answer, so show it
+            if revised is not None:
+                revised = normalize_citations(revised)
+                rev_rep = check_answer(revised, used, self.cfg.broad_lines)
+                draft_had_evidence = draft_rep.n_citations - len(draft_rep.invalid) > 0
+                # Never let "I couldn't find this" replace a draft that cited real code: a refusal passes the
+                # check trivially, so without this rule the repair loop would reward giving up.
+                if rev_rep.refusal and draft_had_evidence:
+                    pass
+                elif rev_rep.penalty < draft_rep.penalty:
+                    final, final_rep, repaired = revised, rev_rep, True
 
         ans = Answer(question, used, final, final_rep.as_dict(), draft, draft_rep.as_dict(), repaired, extra)
         self._log(ans, t_retrieve, time.perf_counter() - t0)

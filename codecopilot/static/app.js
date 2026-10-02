@@ -102,14 +102,33 @@ function renderRepos() {
   }
   ul.innerHTML = state.repos.map((r) => {
     const busy = ["queued", "cloning", "indexing"].includes(r.status);
-    return `<li><button data-id="${esc(r.id)}" ${r.id === state.current ? 'aria-current="true"' : ""}>
+    const del = r.removable && !busy
+      ? `<button class="del" data-del="${esc(r.id)}" title="Remove ${esc(r.name)}" aria-label="Remove ${esc(r.name)}">×</button>` : "";
+    return `<li class="repo-item"><button data-id="${esc(r.id)}" ${r.id === state.current ? 'aria-current="true"' : ""}>
       <span class="repo-name">${esc(r.name)}</span>
       <span class="repo-meta ${r.status === "error" ? "err" : ""} ${busy ? "busy" : ""}">${esc(repoMeta(r))}</span>
-    </button></li>`;
+    </button>${del}</li>`;
   }).join("");
 }
 
-$("#repo-list").addEventListener("click", (e) => {
+$("#repo-list").addEventListener("click", async (e) => {
+  const d = e.target.closest("button[data-del]");
+  if (d) {
+    const r = state.repos.find((x) => x.id === d.dataset.del);
+    if (!r || !confirm(`Remove ${r.name} from the site? Its downloaded code and index are deleted.`)) return;
+    try {
+      await api(`/api/repos/${encodeURIComponent(r.id)}`, { method: "DELETE" });
+    } catch (err) { alert(err.message); return; }
+    if (state.current === r.id) {
+      state.current = null;
+      $("#thread").innerHTML = "";
+      $("#repo-title").textContent = "Pick a repository";
+      $("#repo-sub").textContent = "";
+      resetViewer();
+    }
+    loadRepos();
+    return;
+  }
   const b = e.target.closest("button[data-id]");
   if (!b) return;
   const r = state.repos.find((x) => x.id === b.dataset.id);

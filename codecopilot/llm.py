@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import time
 from typing import Iterator
 
@@ -22,7 +23,8 @@ class LLMError(RuntimeError):
 class LLMClient:
     def __init__(self, cfg: Settings):
         self.cfg = cfg
-        headers = {"Authorization": f"Bearer {cfg.llm_api_key}"} if cfg.llm_api_key else {}
+        self._key = cfg.llm_api_key.strip().strip('"').strip("'")   # pasted keys often carry a space or quote
+        headers = {"Authorization": f"Bearer {self._key}"} if self._key else {}
         self._http = httpx.Client(base_url=cfg.llm_base_url.rstrip("/"), timeout=cfg.llm_timeout_s, headers=headers)
 
     def _request(self, messages: list[dict], stream: bool, temperature: float | None = None,
@@ -35,8 +37,11 @@ class LLMClient:
             # from the front, dropping the system prompt and question. Always set num_ctx explicitly.
             return "/api/chat", {"model": c.llm_model, "messages": messages, "stream": stream,
                                  "options": {"temperature": temp, "num_ctx": ctx, "seed": c.llm_seed}}
-        return "/chat/completions", {"model": c.llm_model, "messages": messages, "stream": stream,
-                                     "temperature": temp, "seed": c.llm_seed}
+        body = {"model": c.llm_model, "messages": messages, "stream": stream, "temperature": temp, "seed": c.llm_seed}
+        if "gpt-oss" in c.llm_model:
+            # reasoning models spend hidden "thinking" tokens, which count against Groq's per-minute limit
+            body["reasoning_effort"] = c.llm_reasoning_effort
+        return "/chat/completions", body
 
     def stream_chat(self, messages: list[dict], temperature: float | None = None,
                     num_ctx: int | None = None) -> Iterator[str]:
@@ -47,9 +52,12 @@ class LLMClient:
                 with self._http.stream("POST", path, json=body) as r:
                     if r.status_code in _RETRYABLE:
                         raise httpx.HTTPStatusError("retryable", request=r.request, response=r)
+                    if r.status_code == 413:
+                        raise LLMError("the question plus code excerpts is bigger than this model's per-request "
+                                       "limit. Lower CC_CONTEXT_TOKEN_BUDGET.")
                     if r.status_code >= 400:
                         r.read()
-                        raise LLMError(f"{r.status_code}: {r.text[:500]}")
+                        raise LLMError(self._scrub(f"{r.status_code}: {r.text[:500]}"))
                     for line in r.iter_lines():
                         tok = self._parse_stream_line(line)
                         if tok:
@@ -57,10 +65,17 @@ class LLMClient:
                             yield tok
                 return
             except (httpx.TransportError, httpx.HTTPStatusError) as e:
+                status = e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
                 # never retry after tokens were emitted — the caller would see duplicated text
                 if started or attempt == self.cfg.llm_max_retries:
-                    raise LLMError(f"LLM request failed after {attempt + 1} attempt(s): {e}") from e
-                time.sleep(min(2 ** attempt, 20) + random.random())
+                    if status == 429:
+                        raise LLMError("the free-tier rate limit was reached (tokens per minute). "
+                                       "Wait about a minute and ask again.") from e
+                    raise LLMError(self._scrub(f"LLM request failed after {attempt + 1} attempt(s): {e}")) from e
+                wait = min(2 ** attempt, 20) + random.random()
+                if status == 429:   # rate limited: the server says how long to wait
+                    wait = self._retry_after(e.response) or wait
+                time.sleep(min(wait, self.cfg.llm_max_wait_s))
 
     def chat(self, messages: list[dict], use_cache: bool = True, temperature: float | None = None,
              num_ctx: int | None = None) -> str:
@@ -84,6 +99,25 @@ class LLMClient:
         ctx = c.llm_num_ctx if num_ctx is None else num_ctx
         blob = json.dumps([c.llm_provider, c.llm_model, temp, c.llm_seed, ctx, messages], sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()
+
+    def _scrub(self, msg: str) -> str:
+        """Error text is shown on the website: never let the API key appear in it."""
+        if self._key:
+            msg = msg.replace(self._key, "[API key hidden]")
+        return re.sub(r"gsk_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9_-]{8,}", "[API key hidden]", msg)
+
+    @staticmethod
+    def _retry_after(r: httpx.Response) -> float | None:
+        for h in ("retry-after", "x-ratelimit-reset-tokens"):
+            v = r.headers.get(h, "")
+            try:   # "7", "7.5" or "7.5s" / "1m2.3s"
+                if "m" in v:
+                    m, sec = v.rstrip("s").split("m")
+                    return 60 * float(m) + float(sec or 0) + 0.5
+                return float(v.rstrip("s")) + 0.5
+            except ValueError:
+                continue
+        return None
 
     def _parse_stream_line(self, line: str) -> str:
         if not line:

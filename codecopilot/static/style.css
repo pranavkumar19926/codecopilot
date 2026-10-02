@@ -77,6 +77,13 @@ button, input, textarea { font: inherit; color: inherit; }
 .repo-name { display: block; font-weight: 500; overflow-wrap: anywhere; }
 .repo-meta { display: block; font-size: 12.5px; color: var(--muted); }
 .repo-meta.err { color: var(--danger); }
+.repo-item { position: relative; }
+.repo-item > button[data-id] { padding-right: 34px; }
+.repo-list .del { position: absolute; top: 6px; right: 4px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 4px;
+  background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; opacity: 0; }
+.repo-item:hover .del, .repo-list .del:focus-visible { opacity: 1; }
+.repo-list .del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+@media (hover: none) { .repo-list .del { opacity: 1; } }
 .repo-list .empty { color: var(--muted); font-size: 13.5px; padding: 0 2px; }
 .busy::before {
   content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%;

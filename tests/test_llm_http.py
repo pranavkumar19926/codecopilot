@@ -50,3 +50,69 @@ def test_openai_compatible_stream_parsing(tmp_path):
         assert seen[0]["temperature"] == cfg.llm_temperature and "seed" in seen[0]
     finally:
         srv.shutdown()
+
+
+def test_rate_limit_waits_for_retry_after_then_succeeds(tmp_path):
+    seen, statuses = [], [429, 200]
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            code = statuses.pop(0)
+            self.send_response(code)
+            if code == 429:
+                self.send_header("retry-after", "0.01")
+            self.end_headers()
+            if code == 200:
+                self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": "ok"}}]}) + "\n").encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        cfg = Settings(llm_provider="openai_compat", llm_base_url=f"http://127.0.0.1:{srv.server_port}",
+                       cache_dir=tmp_path, llm_model="openai/gpt-oss-120b")
+        assert "".join(LLMClient(cfg).stream_chat([{"role": "user", "content": "q"}])) == "ok"
+        assert len(seen) == 2 and seen[0]["reasoning_effort"] == "low"
+    finally:
+        srv.shutdown()
+
+
+def test_rate_limit_gives_a_clear_message(tmp_path):
+    import pytest
+    from codecopilot.llm import LLMError
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(429)
+            self.send_header("retry-after", "0.01")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        cfg = Settings(llm_provider="openai_compat", llm_base_url=f"http://127.0.0.1:{srv.server_port}",
+                       cache_dir=tmp_path, llm_max_retries=1)
+        with pytest.raises(LLMError, match="rate limit"):
+            list(LLMClient(cfg).stream_chat([{"role": "user", "content": "q"}]))
+    finally:
+        srv.shutdown()
+
+
+def test_key_is_trimmed_and_never_shown_in_errors(tmp_path):
+    import pytest
+    from codecopilot.llm import LLMError
+    cfg = Settings(llm_provider="openai_compat", llm_base_url="http://127.0.0.1:9", cache_dir=tmp_path,
+                   llm_api_key="gsk_SECRETabc123XYZ ", llm_max_retries=0)
+    llm = LLMClient(cfg)
+    assert llm._http.headers["Authorization"] == "Bearer gsk_SECRETabc123XYZ"
+    with pytest.raises(LLMError) as e:
+        list(llm.stream_chat([{"role": "user", "content": "q"}]))
+    assert "SECRET" not in str(e.value)
+    assert "SECRET" not in llm._scrub("Illegal header value b'Bearer gsk_SECRETabc123XYZ '")

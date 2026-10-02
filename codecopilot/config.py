@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     llm_num_ctx: int = 10240  # Ollama context window; must exceed context_token_budget + prompt + answer
     llm_timeout_s: float = 300.0  # CPU prompt processing of ~6k tokens can take a minute+
     llm_max_retries: int = 3
+    llm_max_wait_s: float = 30.0   # longest single wait when the provider says "rate limited, retry after N s"
+    llm_reasoning_effort: str = "low"   # gpt-oss models only: less hidden thinking = fewer tokens per minute
 
     prompt_id: str = "answer_v4"   # answer_v2 = Phase 1-3 prompt (no line numbers)
 
@@ -80,7 +82,8 @@ class Settings(BaseSettings):
     web_allow_local: bool = True         # allow "add a local folder" (turned off when deployed)
     web_max_repo_mb: int = 60            # refuse bigger clones
     web_clone_timeout_s: int = 180
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"   # free tier; llama-3.3-70b-versatile isn't enabled on new accounts
+    groq_context_budget: int = 2500           # free tier allows 8k tokens/minute: draft + repair must fit
 
     # Storage
     data_dir: Path = Path(".codecopilot")
