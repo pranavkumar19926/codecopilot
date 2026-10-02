@@ -28,6 +28,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .chunking import _parser, module_name
+from .sources import is_python_like, read_source
 from .ingest import Chunk
 
 # Method names too generic to resolve by name alone (dicts, files, sockets, strings all have them).
@@ -81,7 +82,24 @@ class CodeGraph:
         exact = [n for n in self.nodes if n.kind != "module" and n.qual == s]
         if exact:
             return exact
-        return [n for n in self.nodes if n.kind != "module" and (n.qual.endswith("." + s) or n.name == s)]
+        hits = [n for n in self.nodes if n.kind != "module" and (n.qual.endswith("." + s) or n.name == s)]
+        if hits:
+            return hits
+        low = s.lower()   # "personserver" → PersonServer
+        return [n for n in self.nodes if n.kind != "module"
+                and (n.qual.lower() == low or n.qual.lower().endswith("." + low) or n.name.lower() == low)]
+
+    def similar(self, symbol: str, n: int = 5) -> list[str]:
+        """Names that look like `symbol`, for "did you mean" when a lookup finds nothing."""
+        import difflib
+        s = symbol.strip().strip("`").removesuffix("()").split(".")[-1].lower()
+        names = sorted({x.name for x in self.nodes if x.kind != "module"})
+        by_low = {}
+        for name in names:
+            by_low.setdefault(name.lower(), name)
+        close = difflib.get_close_matches(s, list(by_low), n=n, cutoff=0.6)
+        contains = [l for l in by_low if len(s) >= 4 and (s in l or l in s) and l not in close]
+        return [by_low[l] for l in (close + contains)[:n]]
 
     def callers(self, node_id: int) -> list[Edge]:
         return sorted(self._in.get(node_id, []), key=lambda e: (self.nodes[e.src].path, e.line))
@@ -238,10 +256,10 @@ def build_graph(repo: Path, chunks: list[Chunk]) -> CodeGraph:
         return -1
 
     scans: list[_FileScan] = []
-    for path in sorted(p for p in by_path if p.endswith(".py")):
+    for path in sorted(p for p in by_path if is_python_like(p)):
         try:
-            scans.append(_FileScan(path, (repo / path).read_text(encoding="utf-8")))
-        except (OSError, UnicodeDecodeError):
+            scans.append(_FileScan(path, read_source(repo / path)))
+        except (OSError, UnicodeDecodeError, ValueError):
             continue
 
     nodes: list[Node] = []

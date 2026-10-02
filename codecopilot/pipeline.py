@@ -69,6 +69,15 @@ class Answer:
 
 
 @dataclass
+class Retrieved:
+    """Yielded by ask_stream before any answer tokens: what the model is about to read."""
+    hits: list[Hit]
+    extra: list[Hit]
+    used: list[Hit]
+    rewrites: list[str]
+
+
+@dataclass
 class Repairing:
     """Yielded by ask_stream between the draft and the repaired answer, so the UI can say what's happening."""
     problems: list[str]
@@ -252,13 +261,17 @@ class Copilot:
         context, used = assemble_context(hits + extra, self.cfg.context_token_budget, self.cfg.context_line_numbers)
         return hits, extra, context, used
 
-    def _generate(self, question: str, stream: bool) -> Iterator[str | Repairing | Answer]:
+    def _generate(self, question: str, stream: bool) -> Iterator[str | Retrieved | Repairing | Answer]:
         if self.llm is None:
             raise RuntimeError("No LLM configured")
         t0 = time.perf_counter()
         hits, extra, context, used = self.build_context(question)
         t_retrieve = time.perf_counter() - t0
-        messages = self.prompt.render(question=question, context=context)
+        yield Retrieved(hits, extra, used, list(self.last_rewrites))
+        # Example citation built from a real excerpt: small models copy the prompt's example literally.
+        ex = used[0].chunk if used else None
+        example = f"{ex.path}:{ex.start_line}-{min(ex.start_line + 2, ex.end_line)}" if ex else "path:start-end"
+        messages = self.prompt.render(question=question, context=context, example=example)
 
         if stream:
             draft_toks = []
@@ -276,7 +289,10 @@ class Copilot:
             repair = load_prompt(self.cfg.repair_prompt_id)
             msgs2 = messages + [{"role": "assistant", "content": draft},
                                 {"role": "user", "content": repair.user.format(
-                                    problems="\n".join(f"- {p}" for p in draft_rep.problems()))}]
+                                    problems="\n".join(f"- {p}" for p in draft_rep.problems())
+                                    + (f"\n- The only files you can cite are: "
+                                       + ", ".join(sorted({h.chunk.path for h in used}))
+                                       if draft_rep.invalid else ""))}]
             if stream:
                 toks = []
                 for tok in self.llm.stream_chat(msgs2):
@@ -286,7 +302,12 @@ class Copilot:
             else:
                 revised = self.llm.chat(msgs2)
             rev_rep = check_answer(revised, used, self.cfg.broad_lines)
-            if rev_rep.penalty < draft_rep.penalty:
+            draft_had_evidence = draft_rep.n_citations - len(draft_rep.invalid) > 0
+            # Never let "I couldn't find this" replace a draft that cited real code: a refusal passes the
+            # check trivially, so without this rule the repair loop would reward giving up.
+            if rev_rep.refusal and draft_had_evidence:
+                pass
+            elif rev_rep.penalty < draft_rep.penalty:
                 final, final_rep, repaired = revised, rev_rep, True
 
         ans = Answer(question, used, final, final_rep.as_dict(), draft, draft_rep.as_dict(), repaired, extra)

@@ -49,7 +49,7 @@ class _Unit:
 
 
 def module_name(rel_path: str) -> str:
-    p = rel_path[:-3] if rel_path.endswith(".py") else rel_path
+    p = rel_path.removesuffix(".py").removesuffix(".ipynb")
     if p.startswith("src/"):
         p = p[4:]
     if p.endswith("/__init__"):

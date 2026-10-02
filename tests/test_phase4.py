@@ -121,11 +121,11 @@ def test_strict_checker_flags_unsupported_uncited_invalid_and_broad():
     good = "`rebuild_auth` deletes the header [a.py:10-12]. It first calls `should_strip` [a.py:11-11]."
     rep = check_answer(good, shown)
     assert rep.ok and rep.n_claims == 2 and rep.widths == [3, 1]
-    bad = ("`rebuild_auth` deletes the header [a.py:12-12]. "     # unsupported: name not on line 12
+    bad = ("`get_netrc_auth` deletes the header [a.py:12-12]. "   # unsupported: not on line 12, not the owner
            "It uses `should_strip` to decide. "                     # uncited
            "See [b.py:1-3].")                                       # invalid
     rep = check_answer(bad, shown)
-    assert rep.unsupported == ["rebuild_auth @ a.py:12-12"]
+    assert rep.unsupported == ["get_netrc_auth @ a.py:12-12"]
     assert len(rep.uncited) == 1 and rep.invalid == ["b.py:1-3"]
     assert not rep.ok and len(rep.problems()) == 3
     assert check_answer("`rebuild_auth` [a.py:10-12]", shown, broad_lines=2).broad == ["a.py:10-12"]
@@ -190,3 +190,49 @@ def test_small_class_methods_are_pinnable_through_the_graph(tmp_path):
                  bm25=BM25Index.build(chunks), graph=g)
     hits = cp.retrieve("where is should_strip", k=1)
     assert hits[0].chunk.symbol == "Session" and hits[0].detail.get("symbol")
+
+
+def test_honest_not_found_answer_passes_without_citations():
+    shown = _shown()
+    rep = check_answer("I couldn't find this in the retrieved code. I would search for login or token handling.", shown)
+    assert rep.refusal and rep.ok and rep.problems() == []
+    rep = check_answer("Authentication happens somewhere in the app.", shown)   # vague, uncited, not a refusal
+    assert not rep.refusal and not rep.ok
+    rep = check_answer("I couldn't find all of it, but `rebuild_auth` handles it.", shown)  # claims a name: not a refusal
+    assert not rep.refusal
+
+
+def test_citing_a_call_site_supports_the_enclosing_function_name():
+    body = "def resolve(resp):\n    x = 1\n    return rebuild_auth(resp.request)"
+    shown = [Hit(make_chunk("s.py", 186, 188, body, "Mixin.resolve", "method"), 1.0)]
+    rep = check_answer("`Mixin.resolve` calls `rebuild_auth` [s.py:188-188].", shown)
+    assert rep.ok and rep.unsupported == []
+    rep = check_answer("`other_function` calls `rebuild_auth` [s.py:188-188].", shown)
+    assert rep.unsupported == ["other_function @ s.py:188-188"]
+
+
+def test_repair_never_replaces_a_cited_draft_with_a_refusal(tmp_path):
+    llm = ScriptedLLM(["", "I couldn't find this in the retrieved code."])
+    cp = _answer_copilot(tmp_path, llm)
+    c = cp.retrieve("what calls should_strip", k=1)[0].chunk
+    # valid citation + one unsupported name → repair is attempted, revision gives up → draft must be kept
+    llm.replies[0] = f"`should_strip` is used here [{c.path}:{c.start_line}-{c.start_line}], see `made_up_name` [{c.path}:{c.start_line}-{c.start_line}]."
+    ans = cp.answer("what calls should_strip")
+    assert len(llm.calls) == 2 and not ans.repaired
+    assert ans.text.startswith("`should_strip` is used here")
+
+
+def test_prompt_example_citation_uses_a_real_shown_file(tmp_path):
+    llm = ScriptedLLM(["`should_strip` [pkg/auth.py:1-1].", "I couldn't find this in the retrieved code."])
+    cp = _answer_copilot(tmp_path, llm)
+    cp.answer("what calls should_strip")
+    system = llm.calls[0][0]["content"]
+    assert "src/pkg/auth.py" not in system and "e.g. [pkg/" in system
+
+
+def test_repair_message_lists_citable_files(tmp_path):
+    llm = ScriptedLLM(["`should_strip` lives in [src/pkg/auth.py:18-20].", "I couldn't find this in the retrieved code."])
+    cp = _answer_copilot(tmp_path, llm)
+    cp.answer("what calls should_strip")
+    repair_msg = llm.calls[1][-1]["content"]
+    assert "The only files you can cite are: pkg/" in repair_msg

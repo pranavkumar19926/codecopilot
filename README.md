@@ -8,7 +8,8 @@ Ask questions about a repository; get answers with `path:start-end` citations to
 | 2 | Tree-sitter AST chunks + BM25 keyword search + reciprocal rank fusion + symbol lookup | done |
 | 3 | Hard gold set, cross-encoder reranking, LLM query rewriting, response cache, latency | done |
 | 4 | Call graph (callers / callees / impact), graph expansion, strict citations with repair | done |
-| — | Website, then free deployment (Hugging Face Spaces + Groq) | **next** |
+| 5 | Website: chat with clickable citations, code viewer, callers/callees panel, add repos from GitHub | **current** |
+| — | Free deployment (Hugging Face Spaces + Groq) | next |
 
 ## Setup
 
@@ -45,6 +46,28 @@ Full Phase 3 comparison: `powershell -ExecutionPolicy Bypass -File .\eval\run_ph
 Full Phase 4 run: `powershell -ExecutionPolicy Bypass -File .\eval\run_phase4.ps1`.
 
 Phase 3 flags on `search`, `ask`, `eval`: `--rerank/--no-rerank`, `--rewrite/--no-rewrite`. Rewriting is on by default and needs Ollama running; add `--no-rewrite` to search without it.
+
+## Website
+
+```bash
+codecopilot serve                    # http://127.0.0.1:8000, answers by Ollama (local)
+$env:GROQ_API_KEY="gsk_..."          # Windows PowerShell; free key at console.groq.com/keys
+codecopilot serve --llm groq         # answers by llama-3.3-70b-versatile on Groq, in seconds
+```
+
+* **Repositories:** every `.cc_*` index in the current folder shows up automatically. Add more by pasting a
+  public GitHub URL (cloned shallowly, size-capped) or a local folder path; indexing runs in the background.
+* **Chat:** answers stream in. Citations are highlighted; clicking one opens the file in the code viewer with
+  the same lines highlighted. If the strict-citation check fails, the first draft is kept (collapsed, with
+  the problems listed) and the revision streams in below it.
+* **Callers and callees:** click any `function` name in an answer, or look one up, to see who calls it,
+  what it calls, and how many definitions a change could affect.
+* **Search only:** retrieval without a written answer; takes about a second.
+
+Backend: FastAPI (`web.py`); answers stream as NDJSON events (`sources` → `token`… → `repair`? → `done`).
+Frontend: one HTML page with vanilla JS (`static/`), no build step. API docs at `/api/docs`.
+Safety: GitHub URLs only for remote repos, clone size and time limits, file viewer confined to the repo
+folder, one generation and one indexing job at a time.
 
 ## How retrieval works (Phase 2)
 
@@ -277,6 +300,9 @@ codecopilot/
   rewrite.py    LLM query rewriting → multi-query retrieval
   graph.py      tree-sitter call graph: definitions, call/decorator/instantiate/inherit edges, impact
   citations.py  sentence-level citation checker (invalid / unsupported / uncited / broad)
+  indexer.py    builds vector index + BM25 + call graph (shared by CLI and website)
+  web.py        FastAPI app: repos, streaming ask, search, file viewer, graph API
+  static/       the website (index.html, style.css, app.js)
   pipeline.py   retrieve ([rewrite] → dense/bm25 → RRF → symbol pin → [rerank]) → context → generate → citations → run log
   evaluate.py   recall@k, MRR, hit@1 per question type
   cli.py

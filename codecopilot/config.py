@@ -9,11 +9,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CC_", env_file=".env", extra="ignore")
 
     # Ingestion
-    include_ext: tuple[str, ...] = (".py",)
+    include_ext: tuple[str, ...] = (".py", ".ipynb")   # notebooks are read as their code + markdown cells
     exclude_dirs: tuple[str, ...] = (
         ".git", "__pycache__", ".venv", "venv", "node_modules", "build", "dist", ".tox", ".mypy_cache",
     )
     max_file_bytes: int = 500_000
+    max_notebook_bytes: int = 20_000_000   # raw .ipynb incl. outputs; its code text must still fit max_file_bytes
     # fnmatch globs on repo-relative posix paths, e.g. ("tests/*", "docs/*")
     exclude_globs: tuple[str, ...] = ()
 
@@ -72,7 +73,14 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 300.0  # CPU prompt processing of ~6k tokens can take a minute+
     llm_max_retries: int = 3
 
-    prompt_id: str = "answer_v3"   # answer_v2 = Phase 1-3 prompt (no line numbers)
+    prompt_id: str = "answer_v4"   # answer_v2 = Phase 1-3 prompt (no line numbers)
+
+    # Website (`codecopilot serve`)
+    web_dir: Path = Path(".cc_web")      # repos added from the website: clones + indexes
+    web_allow_local: bool = True         # allow "add a local folder" (turned off when deployed)
+    web_max_repo_mb: int = 60            # refuse bigger clones
+    web_clone_timeout_s: int = 180
+    groq_model: str = "llama-3.3-70b-versatile"
 
     # Storage
     data_dir: Path = Path(".codecopilot")

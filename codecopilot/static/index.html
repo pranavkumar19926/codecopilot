@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codebase Copilot</title>
+<meta name="description" content="Ask questions about a code repository and get answers that cite the exact lines.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231C2430'/%3E%3Crect x='7' y='13' width='18' height='6' rx='1.5' fill='%23FFE58A'/%3E%3C/svg%3E">
+</head>
+<body>
+<div class="app">
+  <aside class="repos" aria-label="Repositories">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span>Codebase Copilot</span>
+    </div>
+    <ul id="repo-list" class="repo-list"></ul>
+    <form id="add-form" class="add-form">
+      <label for="add-input">Add a repository</label>
+      <input id="add-input" name="source" autocomplete="off" spellcheck="false"
+             placeholder="https://github.com/owner/repo">
+      <label class="check"><input type="checkbox" id="add-tests" checked> Skip tests and docs</label>
+      <button type="submit">Add and index</button>
+      <p id="add-error" class="form-error" role="alert"></p>
+    </form>
+    <p id="model-line" class="model-line"></p>
+  </aside>
+
+  <main class="chat" aria-label="Conversation">
+    <header class="chat-head">
+      <button class="icon-btn only-mobile" id="show-repos" aria-label="Show repositories">☰</button>
+      <h1 id="repo-title">Pick a repository</h1>
+      <p id="repo-sub" class="repo-sub"></p>
+    </header>
+    <div id="thread" class="thread" aria-live="polite"></div>
+    <form id="ask-form" class="ask-form">
+      <textarea id="question" rows="2" placeholder="Ask a question about this repository" disabled></textarea>
+      <div class="ask-row">
+        <label class="check"><input type="checkbox" id="search-only"> Search only (no written answer)</label>
+        <button type="submit" id="ask-btn" disabled>Ask</button>
+      </div>
+    </form>
+  </main>
+
+  <section class="viewer" id="viewer" aria-label="Code viewer">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-code" aria-selected="true" aria-controls="pane-code">Code</button>
+      <button role="tab" id="tab-graph" aria-selected="false" aria-controls="pane-graph">Callers and callees</button>
+      <button class="icon-btn only-mobile close" id="close-viewer" aria-label="Close viewer">✕</button>
+    </div>
+    <div id="pane-code" class="pane" role="tabpanel">
+      <div class="file-head" id="file-head">Click a citation in an answer to see the lines it points to.</div>
+      <div class="code" id="code"></div>
+    </div>
+    <div id="pane-graph" class="pane" role="tabpanel" hidden>
+      <form id="graph-form" class="graph-form">
+        <input id="graph-input" placeholder="Function or Class.method" autocomplete="off" spellcheck="false">
+        <button type="submit">Look up</button>
+      </form>
+      <div id="graph-out" class="graph-out">
+        <p class="hint">Look up any function to see who calls it and what it calls. Symbols in answers are clickable too.</p>
+      </div>
+    </div>
+  </section>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

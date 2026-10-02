@@ -17,7 +17,7 @@ from .embed import get_embedder
 from .index import VectorIndex
 from .ingest import ingest_repo
 from .llm import LLMClient, LLMError
-from .pipeline import Answer, Copilot, Repairing
+from .pipeline import Answer, Copilot, Repairing, Retrieved
 
 app = typer.Typer(add_completion=False, help="Codebase Intelligence Copilot — hybrid search, query rewriting, call graph, strict citations")
 con = Console()
@@ -82,36 +82,17 @@ def index(repo: Path = typer.Argument(..., exists=True, file_okay=False),
         update["chunker"] = chunker
     cfg = settings.model_copy(update=update) if update else settings
 
-    t0 = time.perf_counter()
-    chunks = ingest_repo(repo, cfg)
-    prev = None
+    from .indexer import build_all
     try:
-        prev = VectorIndex.load(settings.data_dir)
-    except FileNotFoundError:
-        pass
-    idx = VectorIndex.build(chunks, get_embedder(settings), repo, previous=prev)
-    sizes = [c.end_line - c.start_line + 1 for c in chunks] or [0]
-    idx.meta.update(
-        exclude_globs=list(cfg.exclude_globs), chunker=cfg.chunker,
-        chunk_lines=cfg.chunk_lines, chunk_overlap=cfg.chunk_overlap,
-        ast_max_lines=cfg.ast_max_lines, ast_min_lines=cfg.ast_min_lines,
-        mean_chunk_lines=round(statistics.mean(sizes), 1), median_chunk_lines=statistics.median(sizes),
-        n_files=len({c.path for c in chunks}),
-    )
-    idx.save(settings.data_dir)
-    BM25Index.build(chunks, symbol_boost=cfg.bm25_symbol_boost).save(settings.data_dir / "bm25.json")
-    gpath = settings.data_dir / "graph.json"
-    graph_note = ""
-    if cfg.chunker == "ast":
-        g = build_graph(repo, chunks)
-        g.save(gpath)
-        graph_note = f" + call graph ({g.stats['nodes']} definitions, {g.stats['edges']} edges)"
-    elif gpath.exists():
-        gpath.unlink()   # a graph from an older AST index would point at the wrong chunks
-    m = idx.meta
+        m = build_all(repo, settings.data_dir, cfg, get_embedder(settings))
+    except ValueError as e:
+        con.print(f"[red]{e}[/]")
+        raise typer.Exit(1)
+    g = m.get("graph")
+    graph_note = f" + call graph ({g['nodes']} definitions, {g['edges']} edges)" if g else ""
     con.print(f"[green]Indexed[/] {m['n_files']} files → {m['n_chunks']} {m['chunker']} chunks "
               f"(mean {m['mean_chunk_lines']} lines; {m['n_embedded']} newly embedded) "
-              f"with {m['embed_model']} + BM25{graph_note} in {time.perf_counter() - t0:.1f}s"
+              f"with {m['embed_model']} + BM25{graph_note} in {m['seconds']:.1f}s"
               + (f", excluding {m['exclude_globs']}" if m["exclude_globs"] else ""))
 
 
@@ -145,7 +126,7 @@ def _apply_phase4(strict: bool | None, expand: bool | None) -> None:
     if strict is not None:
         settings.strict_citations = strict
         settings.context_line_numbers = strict
-        settings.prompt_id = "answer_v3" if strict else "answer_v2"
+        settings.prompt_id = "answer_v4" if strict else "answer_v2"
     if expand is not None:
         settings.graph_expand = expand
 
@@ -164,6 +145,8 @@ def ask(question: str, show_sources: bool = typer.Option(True, "--sources/--no-s
         for part in cp.ask_stream(question):
             if isinstance(part, Answer):
                 final = part
+            elif isinstance(part, Retrieved):
+                continue
             elif isinstance(part, Repairing):
                 con.print()
                 con.rule("[yellow]citation check failed — revising[/]")
@@ -455,6 +438,17 @@ def report(path: Path = typer.Argument(RESULTS),
     for table in (t, tt, ta):
         if table.row_count:
             con.print(table)
+
+
+@app.command()
+def serve(host: str = typer.Option("127.0.0.1", "--host"), port: int = typer.Option(8000, "--port", "-p"),
+          llm: str = typer.Option("ollama", "--llm", help="ollama (local) | groq (needs GROQ_API_KEY)")):
+    """Start the website: http://127.0.0.1:8000"""
+    from .web import serve as run
+    if llm not in ("ollama", "groq"):
+        raise typer.BadParameter("--llm must be ollama or groq")
+    con.print(f"[green]Codebase Copilot[/] on http://{host}:{port}  (answers: {llm}; Ctrl+C to stop)")
+    run(host, port, llm)
 
 
 def main() -> None:

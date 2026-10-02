@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .citations import parse_citations
 from .pipeline import Copilot
+from .sources import read_source
 
 
 def load_gold(path: Path) -> list[dict]:
@@ -27,7 +28,7 @@ def validate_gold(gold: list[dict], repo: Path) -> list[str]:
             if not f.exists():
                 problems.append(f"missing file {t['path']}")
                 continue
-            lines = f.read_text(encoding="utf-8").splitlines()
+            lines = read_source(f).splitlines()
             if t["line"] > len(lines) or not lines[t["line"] - 1].strip():
                 problems.append(f"{t['path']}:{t['line']} is out of range or blank")
     return problems

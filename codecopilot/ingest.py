@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .config import Settings
+from .sources import NOTEBOOK_EXT, read_source
 
 
 @dataclass
@@ -57,7 +58,11 @@ def iter_source_files(root: Path, cfg: Settings) -> Iterator[Path]:
         dirnames[:] = sorted(d for d in dirnames if d not in excluded and not d.startswith("."))
         for name in sorted(filenames):
             p = Path(dirpath) / name
-            if p.suffix in cfg.include_ext and p.stat().st_size <= cfg.max_file_bytes:
+            if p.suffix not in cfg.include_ext:
+                continue
+            # notebooks carry their outputs (plots, tables), so the raw file may be much bigger than its code
+            limit = cfg.max_notebook_bytes if p.suffix == NOTEBOOK_EXT else cfg.max_file_bytes
+            if p.stat().st_size <= limit:
                 yield p
 
 
@@ -90,10 +95,12 @@ def ingest_repo(root: Path, cfg: Settings) -> list[Chunk]:
         if is_excluded(rel, cfg.exclude_globs):
             continue
         try:
-            text = f.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+            text = read_source(f)
+        except (UnicodeDecodeError, ValueError):
             continue
-        if cfg.chunker == "ast" and f.suffix == ".py":
+        if len(text) > cfg.max_file_bytes:
+            continue
+        if cfg.chunker == "ast" and f.suffix in (".py", NOTEBOOK_EXT):
             from .chunking import chunk_python  # lazy: tree-sitter only needed for the AST chunker
             out.extend(chunk_python(text, rel, cfg))
         else:
